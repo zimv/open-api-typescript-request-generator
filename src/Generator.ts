@@ -3,11 +3,9 @@ import dayjs from 'dayjs';
 import fs from 'fs-extra';
 import path, { dirname } from 'path';
 import * as conso from './console';
-import _ from 'lodash';
 import got from 'got';
 import { OpenAPIV2, OpenAPIV3 } from 'openapi-types';
 import { swaggerJsonToYApiData } from './server/swaggerJsonToYApiData';
-import os from 'os';
 import { dedent, isFunction } from 'vtils';
 import {
   CommentConfig,
@@ -19,7 +17,6 @@ import {
   GeneratorOptions,
   RequestFunctionTemplateProps
 } from './types';
-import { exec } from 'child_process';
 import {
   getRequestDataJsonSchema,
   getResponseDataJsonSchema,
@@ -44,7 +41,7 @@ interface OutputFileList {
   };
 }
 
-// 默认顶部依赖生成模板
+// Default top-level import template for generated files.
 function defaultTopImportTemplate(config?: Config) {
   return `import request from './request'`;
 }
@@ -56,7 +53,8 @@ const getDataKeySetStr = (method: string) => {
   return 'data';
 };
 
-// 处理路径参数
+// Replace `{param}` placeholders in the path with `${data.param}` so the
+// request function can substitute path params from the incoming data object.
 function handlePathParam(path: string) {
   if (path.match(/\{(\w+)\}/)) {
     // eslint-disable-next-line no-template-curly-in-string
@@ -65,7 +63,35 @@ function handlePathParam(path: string) {
 
   return JSON.stringify(path);
 }
-// 默认请求函数体生成模板
+
+/**
+ * Detect whether a generated request type has degraded to a primitive or
+ * empty shape. A well-formed request DTO is an object literal or interface
+ * reference; these signatures mean the backend did not expose a usable
+ * request body schema (missing `@ApiBody({type})`, inline `@Body()` type,
+ * or a Prisma type bound to `@Body()`), so the generator fell back to a
+ * primitive/empty type. Used to emit a warning so the author can fix the
+ * decorator rather than silently shipping `string`/`{}` to the frontend.
+ */
+function isDegradedRequestType(typeCode: string): boolean {
+  // Collapse whitespace so shape-matching regexes are stable regardless of
+  // prettier's spacing choices.
+  const code = typeCode.replace(/\s+/g, ' ').trim();
+  // Pull the right-hand side of `export type Name = <body>;`.
+  const match = code.match(/^export type \w+ = (.*?);?$/);
+  if (!match) return false;
+  const body = match[1].trim();
+  // Bare primitive / unknown (no body schema inferred at all).
+  if (/^(string|unknown|number|boolean|null)$/.test(body)) return true;
+  // Empty object literal (schema stripped to nothing).
+  if (/^\{\s*\}$/.test(body)) return true;
+  // Index signature only — no named fields, just `[k: string]: unknown`.
+  if (/^\{\s*\[\s*\w+\s*:\s*string\s*\]\s*:\s*unknown\s*\}$/.test(body)) return true;
+  // Path-param merge with a primitive fallback (`{ id: string } & string`).
+  if (/&\s*(string|unknown)\b/.test(body)) return true;
+  return false;
+}
+// Default request function body template.
 function defaultRequestFunctionTemplate(props: RequestFunctionTemplateProps, config?: SyntheticalConfig): string {
   const { baseURL, requestFunctionName, requestDataTypeName, responseDataTypeName, extendedInterfaceInfo } = props;
   const { req_params, req_query } = extendedInterfaceInfo;
@@ -73,7 +99,8 @@ function defaultRequestFunctionTemplate(props: RequestFunctionTemplateProps, con
   const method = extendedInterfaceInfo.method.toLowerCase();
   let finalBaseUrl = '';
   if (baseURL?.match(/^\[code\]:/)) {
-    // 如果使用[code]开头则表示，作为代码段执行，否则仅作为字符串
+    // A `[code]:` prefix means the string should be executed as a code
+    // snippet; otherwise it is treated as a literal string.
     finalBaseUrl = baseURL.replace(/^\[code\]:/, '');
   } else {
     finalBaseUrl = `"${baseURL}"`;
@@ -82,8 +109,8 @@ function defaultRequestFunctionTemplate(props: RequestFunctionTemplateProps, con
     hasData ? '' : '?'
   }: ${requestDataTypeName}${`,extra?:Record<string,any>`}) => {
     return request.${method}<${requestDataTypeName},${responseDataTypeName}>(${handlePathParam(
-    extendedInterfaceInfo.path
-  )}, {
+      extendedInterfaceInfo.path
+    )}, {
       ${getDataKeySetStr(method)},
       ${baseURL ? `baseURL: ${finalBaseUrl},` : ''}
       ${`...extra`}
@@ -92,13 +119,16 @@ function defaultRequestFunctionTemplate(props: RequestFunctionTemplateProps, con
 }
 
 export class Generator {
-  /** 配置 */
+  /** Generator configuration. */
   private config: ApiConfig;
 
   private disposes: Array<() => any> = [];
 
-  constructor(config: Config, private options: GeneratorOptions = { cwd: process.cwd() }) {
-    // config 可能是对象或数组，统一为数组
+  constructor(
+    config: Config,
+    private options: GeneratorOptions = { cwd: process.cwd() }
+  ) {
+    // `config` may be an object or an array; store it as-is.
     this.config = config;
   }
 
@@ -110,8 +140,8 @@ export class Generator {
   }
 
   /**
-   * 生成代码
-   * @returns
+   * Generate all code from the OpenAPI document.
+   * @returns map of output file path to file contents
    */
   async generate(): Promise<OutputFileList> {
     const outputFileList: OutputFileList = Object.create(null);
@@ -120,19 +150,20 @@ export class Generator {
     const typesName = name || '_types_' + (configIndex + 1);
     const openApiV3Json = await this.getOpenApiV3Json(serverUrl);
 
-    // components tstype interface
+    // Generate TypeScript interfaces for every schema declared under
+    // `components.schemas`. Use optional chaining: a valid OpenAPI document
+    // may omit `components` entirely (e.g. APIs with only path parameters
+    // and no schemas); without this guard generation would throw and abort.
+    const componentsSchemas = openApiV3Json.components?.schemas ?? {};
     const componentsCode: string[] = [];
     await Promise.all(
-      Object.keys(openApiV3Json.components.schemas).map(async key => {
-        const code = await jsonSchemaToTsCode(
-          { ...openApiV3Json.components.schemas[key], components: openApiV3Json.components },
-          key
-        );
+      Object.keys(componentsSchemas).map(async key => {
+        const code = await jsonSchemaToTsCode({ ...componentsSchemas[key], components: openApiV3Json.components }, key);
         componentsCode.push(code);
       })
     );
 
-    // 接口列表
+    // Convert the OpenAPI document into the internal interface list.
     const allApi = await swaggerJsonToYApiData(openApiV3Json);
 
     let interfaceList = allApi.interfaces;
@@ -172,9 +203,8 @@ export class Generator {
   }
 
   /**
-   * 写入文件
-   * @param outputFileList
-   * @returns
+   * Write all generated files to disk.
+   * @param outputFileList generated files
    */
   async write(outputFileList: OutputFileList) {
     const JsonSchemaContentList: string[] = [];
@@ -185,10 +215,8 @@ export class Generator {
       projects.push({ projectId: item.projectId });
     });
     const config = this.config || ({} as Config);
-    // config.getRequestFunctionName;
-    // this.requestFunctionNameGen;
 
-    // 生成 request.ts
+    // Generate the shared request.ts file.
     await GenRequest(config);
     let outputContent = '';
 
@@ -203,14 +231,14 @@ export class Generator {
           responseDataJsonSchemaContent
         } = outputFileList[outputFilePath];
 
-        // 支持 .jsx? 后缀
+        // Rewrite `.jsx?` extensions to `.tsx?`.
         outputFilePath = outputFilePath.replace(/\.js(x)?$/, '.ts$1');
         requestFunctionFilePath = requestFunctionFilePath.replace(/\.js(x)?$/, '.ts$1');
         requestHookMakerFilePath = requestHookMakerFilePath.replace(/\.js(x)?$/, '.ts$1');
 
         const topImportTemplate = syntheticalConfig.topImportTemplate || defaultTopImportTemplate;
 
-        // 始终写入主文件
+        // Always write the main file.
         const rawOutputContent = dedent`
           ${topNotesContent()}
           ${topImportTemplate(config)}
@@ -218,7 +246,7 @@ export class Generator {
           ${content.join('\n\n').trim()}
         `;
 
-        outputContent += formatContent(dedent`${rawOutputContent}`);
+        outputContent += await formatContent(dedent`${rawOutputContent}`);
         if (Object.keys(outputFileList).length - 1 === index) {
           await fs.outputFile(outputFilePath, outputContent);
         }
@@ -226,32 +254,16 @@ export class Generator {
     );
   }
 
-  async tsc(file: string) {
-    return new Promise<void>(resolve => {
-      // add this to fix bug that not-generator-file-on-window
-
-      const command = `${os.platform() === 'win32' ? 'node ' : ''}${require.resolve(`typescript/bin/tsc`)}`;
-
-      exec(
-        `${command} --target ES2019 --module ESNext --jsx preserve --declaration --esModuleInterop ${file}`,
-        {
-          cwd: this.options.cwd,
-          env: process.env
-        },
-        () => resolve()
-      );
-    });
-  }
-
-  /** 请求函数名生成 */
+  /** Generate a request function name from the extended interface info. */
   requestFunctionNameGen(extendedInterfaceInfo: ExtendedInterface): string {
     const path = extendedInterfaceInfo.parsedPath.dir;
-    const method = extendedInterfaceInfo.method; // 可能存在同path，不同method的用法
+    // The same path may be used with different HTTP methods.
+    const method = extendedInterfaceInfo.method;
     const words = [method, ...path.split('/'), extendedInterfaceInfo.parsedPath.name].join('_');
     return changeCase.camelCase(words);
   }
 
-  /** 生成接口代码 */
+  /** Generate TypeScript code (types + request function) for a single API. */
   async generateInterfaceCode(syntheticalConfig: SyntheticalConfig, interfaceInfo: Interface) {
     const extendedInterfaceInfo: ExtendedInterface = {
       ...interfaceInfo,
@@ -263,26 +275,30 @@ export class Generator {
     const requestDataTypeName = changeCase.pascalCase(`${requestFunctionName}Request`);
     const responseDataTypeName = changeCase.pascalCase(`${requestFunctionName}Response`);
     const requestDataJsonSchema = getRequestDataJsonSchema(extendedInterfaceInfo);
-    // 入参
+    // Request parameters type.
 
     const requestDataType = await jsonSchemaToTsCode(
       { ...requestDataJsonSchema, components: syntheticalConfig.components },
       requestDataTypeName
     );
-    if (interfaceInfo.path.includes('/path')) {
-      console.log(requestDataType);
+    // Surface request-body type degradation instead of silently shipping a
+    // primitive/empty type to the frontend. Common root causes: missing
+    // `@ApiBody({type: XxxDto})`, inline `@Body() body: {...}` literal, or a
+    // Prisma type bound to `@Body()`.
+    if (isDegradedRequestType(requestDataType)) {
+      console.warn(
+        `[apits-gener] Request type degraded for ` +
+          `${extendedInterfaceInfo.method.toUpperCase()} ${extendedInterfaceInfo.path} — ` +
+          `check backend @Body()/@ApiBody decorator. Generated:\n${requestDataType}`
+      );
     }
     const responseDataJsonSchema = getResponseDataJsonSchema(extendedInterfaceInfo);
-    // console.log(JSON.stringify(responseDataJsonSchema));
     const responseDataType = await jsonSchemaToTsCode(
       { ...responseDataJsonSchema, components: syntheticalConfig.components },
       responseDataTypeName
     );
-    if (interfaceInfo.path.includes('/path')) {
-      console.log(requestDataType);
-    }
 
-    // 接口注释
+    // Build the JSDoc comment block for the generated types/function.
     const genComment = (genTitle: (title: string) => string) => {
       const {
         enabled: isEnabled = true,
@@ -293,7 +309,7 @@ export class Generator {
         updateTime: hasUpdateTime = true,
         link: hasLink = true
       } = {
-        // Swagger 时总是禁用标签、更新时间、链接
+        // For Swagger sources, always disable tags, update time and links.
         tag: false,
         updateTime: false,
         link: false
@@ -301,7 +317,7 @@ export class Generator {
       if (!isEnabled) {
         return '';
       }
-      // 转义标题中的 /
+      // Escape slashes in the title.
       const escapedTitle = String(extendedInterfaceInfo.title).replace(/\//g, '\\/');
       const description = hasLink
         ? `[${escapedTitle}↗](${syntheticalConfig.serverUrl}/project/${extendedInterfaceInfo.project_id}/interface/api/${extendedInterfaceInfo._id})`
@@ -313,12 +329,6 @@ export class Generator {
             value: string | string[];
           }
       > = [
-        // hasCategory && {
-        //   label: '分类',
-        //   value: hasLink
-        //     ? `[${extendedInterfaceInfo._category.name}↗](${syntheticalConfig.serverUrl}/project/${extendedInterfaceInfo.project_id}/interface/api/cat_${extendedInterfaceInfo.catid})`
-        //     : extendedInterfaceInfo._category.name
-        // },
         hasTag && {
           label: '标签',
           value: extendedInterfaceInfo.tag.map(tag => `\`${tag}\``)
@@ -329,7 +339,7 @@ export class Generator {
         },
         hasUpdateTime && {
           label: '更新时间',
-          value: process.env.JEST_WORKER_ID // 测试时使用 unix 时间戳
+          value: process.env.JEST_WORKER_ID // Use a unix timestamp in tests
             ? String(extendedInterfaceInfo.up_time)
             : /* istanbul ignore next */
               `\`${dayjs(extendedInterfaceInfo.up_time * 1000).format('YYYY-MM-DD HH:mm:ss')}\``
@@ -356,8 +366,8 @@ export class Generator {
         typeof baseURL === 'string'
           ? baseURL
           : typeof baseURL === 'function'
-          ? baseURL(extendedInterfaceInfo.path)
-          : '';
+            ? baseURL(extendedInterfaceInfo.path)
+            : '';
     } catch (e) {
       conso.error(e);
     }
