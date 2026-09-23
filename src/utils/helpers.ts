@@ -1,20 +1,28 @@
-import type { AppendOptions } from 'form-data';
-import type { Config, RequestConfig, RequestFunctionParams } from './types';
-import fs from 'fs-extra';
-import * as conso from './console';
+import type {AppendOptions} from 'form-data';
+import type {Config, RequestConfig, RequestFunctionParams} from '../types';
 
 /**
- * Define configuration.
+ * Normalize user configuration into a config array and apply built-in
+ * defaults.
+ *
+ * Defaults:
+ * - `output` falls back to `src/api`.
+ * - `client` falls back to `true`, except when a custom
+ *   `clientImportTemplate` is provided without an explicit `client` value —
+ *   in that case the scaffolded client is skipped automatically, otherwise
+ *   the generated `request.ts` would be dead code (the generated file
+ *   imports the custom client instead).
  *
  * @param config Configuration
  */
 export function defineConfig(config: Config | Config[]): Config[] {
   const configs = config instanceof Array ? config : [config];
   const final: Config[] = configs.map(item => {
+    const client = 'client' in item ? item.client : item.clientImportTemplate ? false : true;
     return {
-      serverUrl: '',
-      outputFilePath: 'src/api',
-      ...item
+      output: 'src/api',
+      client,
+      ...item,
     };
   });
   return final;
@@ -65,10 +73,10 @@ export class FileData<T = any> {
  * @param [requestData] Request data to parse
  * @returns Object containing normal data (data) and file data (fileData), when data and fileData are empty objects, it means no such data exists
  */
-export function parseRequestData(requestData?: any): { data: any; fileData: any } {
+export function parseRequestData(requestData?: any): {data: any; fileData: any} {
   const result = {
     data: {} as any,
-    fileData: {} as any
+    fileData: {} as any,
   };
   /* istanbul ignore else */
   if (requestData != null) {
@@ -92,7 +100,7 @@ export function parseRequestData(requestData?: any): { data: any; fileData: any 
  */
 export function prepare(requestConfig: RequestConfig, requestData: any): RequestFunctionParams {
   let requestPath: string = requestConfig.path;
-  const { data, fileData } = parseRequestData(requestData);
+  const {data, fileData} = parseRequestData(requestData);
   const dataIsObject = data != null && typeof data === 'object' && !Array.isArray(data);
   if (dataIsObject) {
     // Replace path parameters
@@ -128,7 +136,7 @@ export function prepare(requestConfig: RequestConfig, requestData: any): Request
   // All data
   const allData = {
     ...(dataIsObject ? data : {}),
-    ...fileData
+    ...fileData,
   };
 
   // Get form data
@@ -144,8 +152,9 @@ export function prepare(requestConfig: RequestConfig, requestData: any): Request
     const UniFormData: typeof FormData | undefined = useNativeFormData
       ? FormData
       : useNodeFormData
-      ? eval(`require('form-data')`)
-      : undefined;
+        ? // eslint-disable-next-line @typescript-eslint/no-var-requires
+          require('form-data')
+        : undefined;
     if (!UniFormData) {
       throw new Error('FormData is not supported in the current environment');
     }
@@ -168,7 +177,7 @@ export function prepare(requestConfig: RequestConfig, requestData: any): Request
     hasFileData: fileData && Object.keys(fileData).length > 0,
     fileData: fileData,
     allData: allData,
-    getFormData: getFormData
+    getFormData: getFormData,
   };
 }
 
@@ -186,31 +195,3 @@ export const asyncFnArrayOrderRun = async <T = any>(fns: (() => Promise<T>)[], r
   }
   return results || [];
 };
-
-/**
- * Concurrent request queue
- * @param fns
- * @param limit
- * @returns
- */
-export const autoAsyncSplitQueue = async <T = any>(fns: (() => Promise<T>)[], limit = 1000) => {
-  const len = fns.length;
-  let count = 0;
-  const splitArray: (() => Promise<T>)[][] = [];
-
-  while (count < len) {
-    splitArray.push(fns.slice(count, count + limit));
-    count += limit;
-  }
-
-  const result = await asyncFnArrayOrderRun(
-    splitArray.map(item => {
-      return async () => {
-        const res = await Promise.all(item.map(i => i()));
-        return res;
-      };
-    })
-  );
-  return result.flat();
-};
-

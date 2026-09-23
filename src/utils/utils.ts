@@ -1,12 +1,7 @@
-import JSON5 from 'json5';
-import Mock from 'mockjs';
-import path from 'path';
-import toJsonSchema from 'to-json-schema';
-import { castArray, forOwn, isArray, isEmpty, isObject } from 'vtils';
-import { compile, Options } from 'json-schema-to-typescript';
-import { Defined } from 'vtils/types';
-import { FileData } from './helpers';
-import { format as prettierFormat, type Options as PrettierOptions } from 'prettier';
+import {castArray, forOwn, isArray, isEmpty, isObject} from './vtilsLite';
+import {compile} from 'json-schema-to-typescript';
+import type {Defined} from './vtilsLite';
+import {format as prettierFormat, type Options as PrettierOptions} from 'prettier';
 import {
   Interface,
   PropDefinition,
@@ -15,9 +10,8 @@ import {
   RequestFormItemType,
   Required,
   ResponseBodyType,
-  Config
-} from './types';
-import { JSONSchema4, JSONSchema4TypeName } from 'json-schema';
+} from '../types';
+import {JSONSchema4, JSONSchema4TypeName} from 'json-schema';
 
 /**
  * Uppercase the first character of a string, leaving the rest untouched.
@@ -31,39 +25,6 @@ import { JSONSchema4, JSONSchema4TypeName } from 'json-schema';
  */
 function upperFirst(value: string): string {
   return value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
-}
-
-/**
- * Throw an error.
- *
- * @param msg error message parts
- */
-export function throwError(...msg: string[]): never {
-  /* istanbul ignore next */
-  throw new Error(msg.join(''));
-}
-
-/**
- * Normalize a path to unix-style separators.
- *
- * @param path input path
- * @returns path with forward slashes only
- */
-export function toUnixPath(path: string) {
-  return path.replace(/[/\\]+/g, '/');
-}
-
-/**
- * Get a normalized relative path.
- *
- * @param from source path
- * @param to target path
- * @returns relative path
- */
-export function getNormalizedRelativePath(from: string, to: string) {
-  return toUnixPath(path.relative(path.dirname(from), to))
-    .replace(/^(?=[^.])/, './')
-    .replace(/\.(ts|js)x?$/i, '');
 }
 
 /**
@@ -120,7 +81,7 @@ export function processJsonSchema<T extends JSONSchema4>(jsonSchema: T): T {
       type =
         (
           {
-            int: 'integer'
+            int: 'integer',
           } as Record<string, JSONSchema4TypeName>
         )[type] || type;
       return type;
@@ -181,47 +142,8 @@ export function processJsonSchema<T extends JSONSchema4>(jsonSchema: T): T {
  * @param str JSON Schema string
  * @returns parsed JSON Schema object
  */
-export function jsonSchemaStringToJsonSchema(str: string): JSONSchema4 {
+function jsonSchemaStringToJsonSchema(str: string): JSONSchema4 {
   return processJsonSchema(JSON.parse(str));
-}
-
-/**
- * Derive a JSON Schema object from a JSON value.
- *
- * @param json JSON value
- * @returns JSON Schema object
- */
-export function jsonToJsonSchema(json: object): JSONSchema4 {
-  const schema = toJsonSchema(json, {
-    required: false,
-    arrays: {
-      mode: 'first'
-    },
-    objects: {
-      additionalProperties: false
-    },
-    strings: {
-      detectFormat: false
-    },
-    postProcessFnc: (type, schema, value) => {
-      if (!schema.description && !!value && type !== 'object') {
-        schema.description = JSON.stringify(value);
-      }
-      return schema;
-    }
-  });
-  delete schema.description;
-  return processJsonSchema(schema as any);
-}
-
-/**
- * Derive a JSON Schema object from a mockjs template.
- *
- * @param template mockjs template
- * @returns JSON Schema object
- */
-export function mockjsTemplateToJsonSchema(template: object): JSONSchema4 {
-  return processJsonSchema(Mock.toJSONSchema(template) as any);
 }
 
 /**
@@ -230,7 +152,7 @@ export function mockjsTemplateToJsonSchema(template: object): JSONSchema4 {
  * @param propDefinitions list of property definitions
  * @returns JSON Schema object
  */
-export function propDefinitionsToJsonSchema(propDefinitions: PropDefinitions): JSONSchema4 {
+function propDefinitionsToJsonSchema(propDefinitions: PropDefinitions): JSONSchema4 {
   return processJsonSchema({
     type: 'object',
     required: propDefinitions.reduce<string[]>((res, prop) => {
@@ -243,10 +165,18 @@ export function propDefinitionsToJsonSchema(propDefinitions: PropDefinitions): J
       res[prop.name] = {
         type: prop.type,
         description: prop.comment,
-        ...(prop.type === ('file' as any) ? { tsType: FileData.name } : {})
+        // File fields emit the native DOM `File` type (or `File[]` for
+        // multi-file arrays) so generated code has no dangling reference
+        // to the generator-internal `FileData` class. Non-file fields with
+        // an enum constraint emit a literal union.
+        ...(prop.type === ('file' as any)
+          ? {tsType: prop.isArray ? 'File[]' : 'File'}
+          : Array.isArray(prop.enum) && prop.enum.length
+            ? {enum: prop.enum}
+            : {}),
       };
       return res;
-    }, {})
+    }, {}),
   });
 }
 
@@ -254,7 +184,7 @@ export function propDefinitionsToJsonSchema(propDefinitions: PropDefinitions): J
  * Get the prettier configuration used to format generated code.
  * @returns prettier options
  */
-export function getPrettier(): PrettierOptions {
+function getPrettier(): PrettierOptions {
   return {
     printWidth: 120,
     tabWidth: 2,
@@ -263,7 +193,7 @@ export function getPrettier(): PrettierOptions {
     trailingComma: 'all',
     bracketSpacing: false,
     endOfLine: 'lf',
-    parser: 'babel-ts'
+    parser: 'babel-ts',
   };
 }
 
@@ -290,7 +220,7 @@ export function preprocessSchema(schema: JSONSchema4): JSONSchema4 {
     return schema.map(preprocessSchema);
   }
 
-  const processed = { ...schema };
+  const processed = {...schema};
 
   // Drop empty enum arrays (a type with no values produces invalid output).
   if (processed.enum && Array.isArray(processed.enum) && processed.enum.length === 0) {
@@ -440,7 +370,7 @@ export async function jsonSchemaToTsCode(jsonSchema: JSONSchema4, typeName: stri
   const code = await compile(jsonSchema, fakeTypeName, {
     bannerComment: '',
     additionalProperties: false,
-    declareExternallyReferenced: false
+    declareExternallyReferenced: false,
   });
 
   delete jsonSchema.id;
@@ -457,15 +387,18 @@ export function getRequestDataJsonSchema(interfaceInfo: Interface): JSONSchema4 
           name: item.name,
           required: item.required === Required.true,
           type: (item.type === RequestFormItemType.file ? 'file' : 'string') as any,
-          comment: item.desc
+          comment: item.desc,
+          // Carry multi-file and enum markers from the OAS3 multipart schema
+          // expansion so propDefinitionsToJsonSchema can emit `File[]` and
+          // literal unions instead of collapsing every field to `string`.
+          ...(item.isArray ? {isArray: true} : {}),
+          ...(Array.isArray(item.enum) && item.enum.length ? {enum: item.enum} : {}),
         }))
       );
       break;
     case RequestBodyType.json:
       if (interfaceInfo.req_body_other) {
-        jsonSchema = interfaceInfo.req_body_is_json_schema
-          ? jsonSchemaStringToJsonSchema(interfaceInfo.req_body_other)
-          : jsonToJsonSchema(JSON5.parse(interfaceInfo.req_body_other));
+        jsonSchema = jsonSchemaStringToJsonSchema(interfaceInfo.req_body_other);
       }
       break;
     default:
@@ -499,18 +432,18 @@ export function getRequestDataJsonSchema(interfaceInfo: Interface): JSONSchema4 
         name: item.name,
         required: item.required === Required.true,
         type: item.type || 'any', // `object` resolves to `{}`, which causes declaration issues, so strip it for now
-        comment: item.desc
+        comment: item.desc,
       }))
     );
     /* istanbul ignore else */
     if (jsonSchema) {
       jsonSchema.properties = {
         ...jsonSchema.properties,
-        ...queryJsonSchema.properties
+        ...queryJsonSchema.properties,
       };
       jsonSchema.required = [
         ...((jsonSchema.required as string[]) || []),
-        ...((queryJsonSchema.required as string[]) || [])
+        ...((queryJsonSchema.required as string[]) || []),
       ];
     } else {
       jsonSchema = queryJsonSchema;
@@ -523,18 +456,18 @@ export function getRequestDataJsonSchema(interfaceInfo: Interface): JSONSchema4 
         name: item.name,
         required: true,
         type: item.type || 'string',
-        comment: item.desc
+        comment: item.desc,
       }))
     );
     /* istanbul ignore else */
     if (jsonSchema) {
       jsonSchema.properties = {
         ...jsonSchema.properties,
-        ...paramsJsonSchema.properties
+        ...paramsJsonSchema.properties,
       };
       jsonSchema.required = [
         ...((jsonSchema.required as string[]) || []),
-        ...((paramsJsonSchema.required as string[]) || [])
+        ...((paramsJsonSchema.required as string[]) || []),
       ];
     } else {
       jsonSchema = paramsJsonSchema;
@@ -550,34 +483,15 @@ export function getResponseDataJsonSchema(interfaceInfo: Interface): JSONSchema4
   switch (interfaceInfo.res_body_type) {
     case ResponseBodyType.json:
       if (interfaceInfo.res_body) {
-        jsonSchema = interfaceInfo.res_body_is_json_schema
-          ? jsonSchemaStringToJsonSchema(interfaceInfo.res_body)
-          : mockjsTemplateToJsonSchema(JSON5.parse(interfaceInfo.res_body));
+        jsonSchema = jsonSchemaStringToJsonSchema(interfaceInfo.res_body);
       }
       break;
     default:
-      jsonSchema = { __is_any__: true };
+      jsonSchema = {__is_any__: true};
       break;
   }
 
   return jsonSchema;
-}
-
-export function sortByWeights<T extends { weights: number[] }>(list: T[]): T[] {
-  list.sort((a, b) => {
-    const x = a.weights.length > b.weights.length ? b : a;
-    const minLen = Math.min(a.weights.length, b.weights.length);
-    const maxLen = Math.max(a.weights.length, b.weights.length);
-    x.weights.push(...new Array(maxLen - minLen).fill(0));
-    const w = a.weights.reduce((w, _, i) => {
-      if (w === 0) {
-        w = a.weights[i] - b.weights[i];
-      }
-      return w;
-    }, 0);
-    return w;
-  });
-  return list;
 }
 
 /**

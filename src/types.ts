@@ -1,82 +1,19 @@
 export * from 'json-schema';
-import { JSONSchema4 } from 'json-schema';
-import { OpenAPIV2, OpenAPIV3 } from 'openapi-types';
-import { LiteralUnion, OmitStrict } from 'vtils/types';
-import { ParsedPath } from 'path';
+import {JSONSchema4} from 'json-schema';
+import {OpenAPIV3} from 'openapi-types';
+import {ParsedPath} from 'path';
 
-export type requestFunctionTemplateType = (props: RequestFunctionTemplateProps, config?: SyntheticalConfig) => string;
-
-/** Top dependency generation template function */
-/** Generator parameters */
-export type topImportTemplateType = () => string;
-
-export interface GeneratorOptions {
-  cwd: string;
-}
-
-/** Project information */
-export interface Project {
-  /** ID */
-  _id: number;
-  /** Name */
-  name: string;
-  /** Description */
-  desc: string;
-  /** Base path */
-  basepath: string;
-  /** Tags */
-  tag: string[];
-  /** Environment configuration */
-  env: Array<{
-    /** Environment name */
-    name: string;
-    /** Environment domain */
-    domain: string;
-  }>;
-  /** Project token */
-  token?: string;
-  /** Category list under the project */
-  cat: Category[];
-  components?: object[];
-}
+/** Returns the client import snippet placed at the top of each generated file. */
+export type ClientImportTemplate = () => string;
 
 /** Interface definition */
 export interface Interface {
-  /** Interface ID */
-  _id: number;
-  /** Category information (implemented by YTT) */
-  _category: OmitStrict<Category, 'list'>;
-  /** Project information (implemented by YTT) */
-  _project: Project;
   /** Interface name */
   title: string;
-  /** Status */
-  status: LiteralUnion<'done' | 'undone', string>;
-  /** Interface remarks */
-  markdown: string;
   /** Request path */
   path: string;
   /** Request method, HEAD and OPTIONS are handled like GET, others like POST */
   method: Method;
-  /** Project ID */
-  project_id: number;
-  /** Category ID */
-  catid: number;
-  /** Tag list */
-  tag: string[];
-  /** Request headers */
-  req_headers: Array<{
-    /** Name */
-    name: string;
-    /** Value */
-    value: string;
-    /** Description */
-    desc: string;
-    /** Example */
-    example: string;
-    /** Required */
-    required: Required;
-  }>;
   /** Path parameters */
   req_params: Array<{
     /** Name */
@@ -117,7 +54,27 @@ export interface Interface {
     example: string;
     /** Required */
     required: Required;
+    /**
+     * Whether the field accepts multiple files (a binary array in the
+     * OpenAPI schema, e.g. `files: {type: 'array', items: {format: 'binary'}}`).
+     * Only meaningful when `type` is `file`.
+     */
+    isArray?: boolean;
+    /** Allowed literal values when the form field is an enum */
+    enum?: Array<string | number>;
   }>;
+  /**
+   * Whether the form body is `multipart/form-data` (true) or
+   * `application/x-www-form-urlencoded` (false). Only set when
+   * `req_body_type = form`.
+   */
+  req_body_multipart?: boolean;
+  /**
+   * JSON Schema fragment describing dynamic form fields (the
+   * `additionalProperties` of a multipart request schema). Used for
+   * runtime-named upload fields such as `evidence_0`, `evidence_1`, ...
+   */
+  req_body_additional?: Record<string, any>;
   /** Request content when `req_body_type = json` */
   req_body_other: string;
   /** Response data type */
@@ -126,124 +83,15 @@ export interface Interface {
   res_body_is_json_schema: boolean;
   /** Response data */
   res_body: string;
-  /** Creation time (unix timestamp) */
-  add_time: number;
-  /** Update time (unix timestamp) */
-  up_time: number;
   [key: string]: any;
 }
 
-/** Interface basic information */
-export interface BaseInterfaceInfo {
-  edit_uid: number;
-  status: string;
-  api_opened: boolean;
-  tag: string[];
-  _id: number;
-  method: string;
-  title: string;
-  path: string;
-  project_id: number;
-  catid: number;
-  uid: number;
-  add_time: number;
-}
-
-/** Interface list */
-export type InterfaceList = Interface[];
-
 /** Category information */
 export interface Category {
-  /** ID */
-  _id: number;
   /** Category name */
   name: string;
   /** Category description */
   desc: string;
-  /** Interface list in this category */
-  list: InterfaceList;
-  /** Creation time (unix timestamp) */
-  add_time: number;
-  /** Update time (unix timestamp) */
-  up_time: number;
-}
-
-export interface ChangeCase {
-  /**
-   * @example
-   * changeCase.camelCase('test string') // => 'testString'
-   */
-  camelCase: (value: string) => string;
-  /**
-   * @example
-   * changeCase.constantCase('test string') // => 'TEST_STRING'
-   */
-  constantCase: (value: string) => string;
-  /**
-   * @example
-   * changeCase.dotCase('test string') // => 'test.string'
-   */
-  dotCase: (value: string) => string;
-  /**
-   * @example
-   * changeCase.headerCase('test string') // => 'Test-String'
-   */
-  headerCase: (value: string) => string;
-  /**
-   * @example
-   * changeCase.lowerCase('TEST STRING') // => 'test string'
-   */
-  lowerCase: (value: string) => string;
-  /**
-   * @example
-   * changeCase.lowerCaseFirst('TEST') // => 'tEST'
-   */
-  lowerCaseFirst: (value: string) => string;
-  /**
-   * @example
-   * changeCase.paramCase('test string') // => 'test-string'
-   */
-  paramCase: (value: string) => string;
-  /**
-   * @example
-   * changeCase.pascalCase('test string') // => 'TestString'
-   */
-  pascalCase: (value: string) => string;
-  /**
-   * @example
-   * changeCase.pathCase('test string') // => 'test/string'
-   */
-  pathCase: (value: string) => string;
-  /**
-   * @example
-   * changeCase.sentenceCase('testString') // => 'Test string'
-   */
-  sentenceCase: (value: string) => string;
-  /**
-   * @example
-   * changeCase.snakeCase('test string') // => 'test_string'
-   */
-  snakeCase: (value: string) => string;
-  /**
-   * @example
-   * changeCase.swapCase('Test String') // => 'tEST sTRING'
-   */
-  swapCase: (value: string) => string;
-  /**
-   * @example
-   * changeCase.titleCase('a simple test') // => 'A Simple Test'
-   */
-  titleCase: (value: string) => string;
-  /**
-   * @example
-   * changeCase.upperCase('test string') // => 'TEST STRING'
-   */
-  upperCase: (value: string) => string;
-  /**
-   * @example
-   * changeCase.upperCaseFirst('test') // => 'Test'
-   */
-  upperCaseFirst: (value: string) => string;
 }
 
 /** Request method */
@@ -254,7 +102,7 @@ export enum Method {
   DELETE = 'DELETE',
   HEAD = 'HEAD',
   OPTIONS = 'OPTIONS',
-  PATCH = 'PATCH'
+  PATCH = 'PATCH',
 }
 
 /** Required */
@@ -262,7 +110,7 @@ export enum Required {
   /** Not required */
   false = '0',
   /** Required */
-  true = '1'
+  true = '1',
 }
 
 /** Request body type */
@@ -280,7 +128,7 @@ export enum RequestBodyType {
   /** Raw data */
   raw = 'raw',
   /** No request data */
-  none = 'none'
+  none = 'none',
 }
 
 /** Request path parameter type */
@@ -288,7 +136,7 @@ export enum RequestParamType {
   /** String */
   string = 'string',
   /** Number */
-  number = 'number'
+  number = 'number',
 }
 
 /** Request query parameter type */
@@ -296,7 +144,7 @@ export enum RequestQueryType {
   /** String */
   string = 'string',
   /** Number */
-  number = 'number'
+  number = 'number',
 }
 
 /** Request form item type */
@@ -304,7 +152,7 @@ export enum RequestFormItemType {
   /** Plain text */
   text = 'text',
   /** File */
-  file = 'file'
+  file = 'file',
 }
 
 /** Response body type */
@@ -316,7 +164,7 @@ export enum ResponseBodyType {
   /** XML */
   xml = 'xml',
   /** Raw data */
-  raw = 'raw'
+  raw = 'raw',
 }
 
 /** Extended interface definition */
@@ -324,168 +172,77 @@ export interface ExtendedInterface extends Interface {
   parsedPath: ParsedPath;
 }
 
-/** Category list, corresponding to exported json content */
-export type CategoryList = Category[];
-
-/** Configuration for generating JSON Schema */
-export interface JsonSchemaConfig {
-  /**
-   * Whether to enable this feature.
-   */
-  enabled: boolean;
-}
-
-/** Configuration for generating comments */
-export interface CommentConfig {
-  /**
-   * Whether to enable this feature.
-   *
-   * @default true
-   */
-  enabled?: boolean;
-
-  /**
-   * Whether to include title.
-   *
-   * @default true
-   */
-  title?: boolean;
-
-  /**
-   * Whether to include category name.
-   *
-   * @default true
-   */
-  category?: boolean;
-
-  /**
-   * Whether to include tags.
-   *
-   * @default true
-   */
-  tag?: boolean;
-
-  /**
-   * Whether to include request headers.
-   *
-   * @default true
-   */
-  requestHeader?: boolean;
-
-  /**
-   * Whether to include update time.
-   *
-   * @default true
-   */
-  updateTime?: boolean;
-
-  /**
-   * Whether to add links to title and category name.
-   *
-   * @default true
-   */
-  link?: boolean;
-}
-
 /**
- * Shared configuration.
- */
-export interface SharedConfig {
-  /**
-   * Output file path.
-   *
-   * Can be `relative path` or `absolute path`.
-   *
-   * @example 'src/api/index.ts'
-   */
-  outputFilePath?: string;
-
-  /**
-   * Request function file path.
-   *
-   * @default `request.ts` file in the same directory as `outputFilePath`
-   * @example 'src/api/request.ts'
-   */
-  requestFunctionFilePath?: string;
-
-  /**
-   * Configuration for generating comments.
-   */
-  comment?: CommentConfig;
-
-  /**
-   * Get the name of the request function.
-   *
-   * @default changeCase.camelCase(interfaceInfo.parsedPath.name)
-   * @param interfaceInfo Interface information
-   * @param changeCase Collection of common case conversion functions
-   * @returns Name of the request function
-   */
-  getRequestFunctionName?(interfaceInfo: ExtendedInterface, changeCase: ChangeCase): string;
-
-  /**
-   * Get the name of the request data type.
-   *
-   * @default changeCase.pascalCase(`${requestFunctionName}Request`)
-   * @param interfaceInfo Interface information
-   * @param changeCase Collection of common case conversion functions
-   * @returns Name of the request data type
-   */
-  getRequestDataTypeName?(interfaceInfo: ExtendedInterface, changeCase: ChangeCase): string;
-
-  /**
-   * Get the name of the response data type.
-   *
-   * @default changeCase.pascalCase(`${requestFunctionName}Response`)
-   * @param interfaceInfo Interface information
-   * @param changeCase Collection of common case conversion functions
-   * @returns Name of the response data type
-   */
-  getResponseDataTypeName?(interfaceInfo: ExtendedInterface, changeCase: ChangeCase): string;
-}
-
-/**
- * Server configuration.
+ * Generator configuration for one OpenAPI source.
  */
 export interface ApiConfig {
-  name: string;
-  configIndex?: number;
   /**
-   * Server URL. Enter the swagger json address here.
-   * For example, nestjs projects usually use http://localhost:3041/api-json
+   * The OpenAPI document to generate code from. Required.
    *
+   * Accepts an http(s) URL or a local file path. Local files may be
+   * JSON (.json / .json5) or YAML (.yaml / .yml).
+   *
+   * @example 'http://localhost:3041/api-json'
+   * @example './openapi.json'
+   * @example './docs/openapi.yaml'
    */
-  serverUrl: string;
+  input: string;
   /**
-   * Output file path.
+   * Output directory for generated files (relative or absolute path).
    *
-   * Can be `relative path` or `absolute path`.
+   * Two files are written into it: `<name>.ts` (type declarations and
+   * request functions) and `request.ts` (the axios client, unless
+   * `client` is false or the file already exists).
    *
-   * @example 'src/api/index.ts'
+   * @default 'src/api'
    */
-  outputFilePath?: string;
+  output?: string;
   /**
-   * Set the baseURL for the interface
+   * Base name of the generated types file: code is written to
+   * `<output>/<name>.ts`. Also serves as the source identifier for
+   * `apits gen -n <name>` filtering.
    *
-   * @description To configure runtime code, add the `[code]:` prefix
-   ```
-   Example:
-    baseURL: "[code]:process.env.BASE_URL"  => baseURL:process.env.BASE_URL
-
-    baseURL: "http://localhost:3000" => baseURL:"http://localhost:3000"
-   ```
+   * Defaults to a name derived from `input`: the URL hostname
+   * (`http://localhost:3041/api-json` -> `localhost`) or the local file
+   * name without extension (`./user.openapi.yaml` -> `userOpenapi`).
+   * Duplicated derived names get an index suffix.
+   */
+  name?: string;
+  /**
+   * Runtime `baseURL` baked into every generated request function.
+   *
+   * Prefix with `[code]:` to emit the value as code instead of a string
+   * literal, e.g. to read from an env var at runtime:
+   *
+   * - `baseURL: '[code]:process.env.BASE_URL'` -> `baseURL: process.env.BASE_URL`
+   * - `baseURL: 'http://localhost:3000'`       -> `baseURL: "http://localhost:3000"`
+   *
+   * May also be a function receiving each API path and returning the
+   * baseURL to use for that path (or undefined to omit).
    */
   baseURL?: ((path: string) => string | undefined) | string;
   /**
-   * Define a code snippet at the top of each generated api file
-   * For example: import custom request function
-   * default: import request from './request'
+   * Returns the import snippet placed at the top of every generated file —
+   * use it to point at a custom request client instead of the scaffolded
+   * `request.ts`.
+   *
+   * Providing this option also flips the default of `client` to `false`,
+   * so no unused `request.ts` is scaffolded; set `client: true` explicitly
+   * to keep both.
+   *
+   * @default () => "import request from './request'"
    */
-  topImportTemplate?: topImportTemplateType;
+  clientImportTemplate?: ClientImportTemplate;
   /**
-   * Whether to use the default request library, request.ts will not be generated after disabling, default: true
+   * Whether to scaffold the default axios request client into
+   * `<output>/request.ts` (skipped when that file already exists).
+   *
+   * Defaults to `true`, and to `false` when `clientImportTemplate` is
+   * provided without an explicit `client` value.
+   *
+   * @default true
    */
-  defaultRequestLib?: boolean;
+  client?: boolean;
 }
 
 /** Combined configuration. */
@@ -505,7 +262,7 @@ export interface RequestConfig<
   Path extends string = string,
   ParamName extends string = string,
   QueryName extends string = string,
-  RequestDataOptional extends boolean = boolean
+  RequestDataOptional extends boolean = boolean,
 > {
   /** Interface path, starting with `/` */
   path: Path;
@@ -562,6 +319,10 @@ export interface PropDefinition {
   type: JSONSchema4['type'];
   /** Comment */
   comment: string;
+  /** Whether the property is an array (used for multi-file upload fields) */
+  isArray?: boolean;
+  /** Allowed literal values for enum properties */
+  enum?: Array<string | number>;
 }
 
 /** Property definition list */

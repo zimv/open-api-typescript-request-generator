@@ -1,4 +1,4 @@
 #!/usr/bin/env node
 
-import CLI from '../src/cli';
+const CLI = require('../dist/cjs/core/cli').default;
 new CLI().run(process.argv.slice(2));
