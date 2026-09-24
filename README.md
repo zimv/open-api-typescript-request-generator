@@ -1,10 +1,10 @@
-# open-api-typescript-request-generator
+# api-ts-gen
 
 Based on the OpenAPI specification, generate request and response type declarations and request method bodies for APIs
 
 ## Installation
 
-`npm install open-api-typescript-request-generator`
+`npm install api-ts-gen`
 
 ## Quick start (no config file needed)
 
@@ -58,7 +58,7 @@ The config file is auto-discovered from any of:
 
 ```ts
 // apits.config.ts
-import { defineConfig } from 'open-api-typescript-request-generator'
+import { defineConfig } from 'api-ts-gen'
 
 export default defineConfig([
   {

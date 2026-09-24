@@ -88,7 +88,7 @@ function handleRequestBody(requestBody, api): void {
 ## 验证
 
 ```bash
-docker exec -w /home/worldzhy/src/open-api-typescript-request-generator b41986a2a300 npm run build
-docker exec -w /home/worldzhy/src/open-api-typescript-request-generator b41986a2a300 npm test
-docker exec -w /home/worldzhy/src/open-api-typescript-request-generator b41986a2a300 npx tsc --noEmit
+docker exec -w /home/worldzhy/src/api-ts-gen b41986a2a300 npm run build
+docker exec -w /home/worldzhy/src/api-ts-gen b41986a2a300 npm test
+docker exec -w /home/worldzhy/src/api-ts-gen b41986a2a300 npx tsc --noEmit
 ```

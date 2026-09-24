@@ -238,7 +238,7 @@ export async function genConfig(prefill?: {input?: string}) {
   await fs.outputFile(
     configTSFile,
     await formatContent(dedent`
-      import { defineConfig } from 'open-api-typescript-request-generator'
+      import { defineConfig } from 'api-ts-gen'
 
       export default defineConfig([{
         input: '${configAnswers?.input || ''}',

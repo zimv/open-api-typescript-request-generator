@@ -12,8 +12,8 @@ description: 整理 TypeScript src 结构、统一文件命名、清理未使用
 无宿主机 Node，命令通过容器执行，npm 不在默认 PATH，必须用 `bash -lc`：
 
 ```bash
-docker exec -w /home/worldzhy/src/open-api-typescript-request-generator <容器ID> bash -lc 'npm run build'
-docker exec -w /home/worldzhy/src/open-api-typescript-request-generator <容器ID> bash -lc 'npm test'
+docker exec -w /home/worldzhy/src/api-ts-gen <容器ID> bash -lc 'npm run build'
+docker exec -w /home/worldzhy/src/api-ts-gen <容器ID> bash -lc 'npm test'
 ```
 
 容器 ID 用 `docker ps` 确认（可能变化）。构建输出 `dist/cjs` + `dist/esm`；测试断言 G-1/G-2/G-3。
