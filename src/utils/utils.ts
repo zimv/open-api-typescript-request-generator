@@ -517,7 +517,7 @@ export async function formatContent(content: string): Promise<string> {
 export function topNotesContent(): string {
   return `
   /**
-   * Created By api-ts-gen
+   * Created By apits-gen
    */
 
   `;

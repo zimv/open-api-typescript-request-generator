@@ -1,10 +1,10 @@
-# api-ts-gen
+# apits-gen
 
 Based on the OpenAPI specification, generate request and response type declarations and request method bodies for APIs
 
 ## Installation
 
-`npm install api-ts-gen`
+`npm install apits-gen`
 
 ## Quick start (no config file needed)
 
@@ -58,7 +58,7 @@ The config file is auto-discovered from any of:
 
 ```ts
 // apits.config.ts
-import { defineConfig } from 'api-ts-gen'
+import { defineConfig } from 'apits-gen'
 
 export default defineConfig([
   {
